@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 import bcrypt
 import smtplib
 from email.mime.text import MIMEText
@@ -40,7 +40,7 @@ def init_db():
 
 def send_email(to, subject, body):
     sender = 'leocelestine.s@gmail.com'
-    password = 'wyxq kvwx qzsh mqee'  # Replace with the app password
+    password = 'your_app_specific_password'  # Replace with the app password
     msg = MIMEText(body)
     msg['Subject'] = subject
     msg['From'] = sender
@@ -135,8 +135,8 @@ def login():
 def mark_attendance():
     data = request.get_json()
     employee = data['employee']
-    date = datetime.now().strftime("%Y-%m-%d")
-    time = datetime.now().strftime("%H:%M:%S")
+    date = data['date']
+    time = data['time']
     type = data['type']
 
     conn = sqlite3.connect('database.db')
