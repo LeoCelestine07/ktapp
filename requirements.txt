@@ -21,3 +21,8 @@ twilio==9.2.3
 urllib3==2.2.2
 Werkzeug==3.0.3
 yarl==1.9.4
+Flask
+pymongo
+bcrypt
+smtplib
+email

@@ -20,13 +20,11 @@ document.getElementById('loginForm').addEventListener('submit', function (e) {
                     window.location.href = '/staff';
                 }
             } else {
-                document.getElementById('status').innerText = 'Invalid credentials';
-                clearMessageAfterDelay('status');
+                displayMessage('Invalid credentials');
             }
         })
         .catch(error => {
-            document.getElementById('status').innerText = 'Error: ' + error.message;
-            clearMessageAfterDelay('status');
+            displayMessage('Error: ' + error.message);
         });
 });
 
@@ -48,16 +46,14 @@ document.getElementById('otpForm').addEventListener('submit', function (e) {
     })
         .then(response => response.json())
         .then(data => {
-            document.getElementById('otpStatus').innerText = data.message;
-            clearMessageAfterDelay('otpStatus');
+            displayMessage(data.message, 'otpStatus');
             if (data.message === 'OTP sent') {
                 document.getElementById('newPasswordForm').style.display = 'block';
                 document.getElementById('otpForm').style.display = 'none';
             }
         })
         .catch(error => {
-            document.getElementById('otpStatus').innerText = 'Error: ' + error.message;
-            clearMessageAfterDelay('otpStatus');
+            displayMessage('Error: ' + error.message, 'otpStatus');
         });
 });
 
@@ -76,23 +72,22 @@ document.getElementById('newPasswordForm').addEventListener('submit', function (
     })
         .then(response => response.json())
         .then(data => {
-            document.getElementById('newPasswordStatus').innerText = data.message;
-            clearMessageAfterDelay('newPasswordStatus');
+            displayMessage(data.message, 'newPasswordStatus');
             if (data.message === 'Password reset successfully') {
                 document.getElementById('resetForm').style.display = 'none';
                 document.getElementById('loginForm').style.display = 'block';
-                document.getElementById('status').innerText = 'Password reset successfully';
-                clearMessageAfterDelay('status');
+                displayMessage('Password reset successfully');
             }
         })
         .catch(error => {
-            document.getElementById('newPasswordStatus').innerText = 'Error: ' + error.message;
-            clearMessageAfterDelay('newPasswordStatus');
+            displayMessage('Error: ' + error.message, 'newPasswordStatus');
         });
 });
 
-function clearMessageAfterDelay(elementId) {
+function displayMessage(message, elementId = 'status') {
+    const statusElement = document.getElementById(elementId);
+    statusElement.innerText = message;
     setTimeout(function () {
-        document.getElementById(elementId).innerText = '';
+        statusElement.innerText = '';
     }, 5000);
 }
