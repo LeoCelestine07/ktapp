@@ -6,9 +6,13 @@ import smtplib
 from email.mime.text import MIMEText
 from random import randint
 import logging
+import os
 
-app = Flask(__name__, static_folder='.')
+app = Flask(__name__, static_folder='static')
 logging.basicConfig(level=logging.INFO)
+
+# MongoDB connection details
+MONGODB_URI = os.getenv('MONGODB_URI')
 
 def init_db():
     conn = sqlite3.connect('database.db')
