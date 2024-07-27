@@ -1,36 +1,60 @@
 from flask import Flask, request, jsonify, send_from_directory
-from pymongo import MongoClient
+import sqlite3
 from datetime import datetime
 import bcrypt
 import smtplib
 from email.mime.text import MIMEText
 from random import randint
-import os
+import logging
 
-app = Flask(__name__, static_folder='')
+app = Flask(__name__, static_folder='.')
+logging.basicConfig(level=logging.INFO)
 
-client = MongoClient('mongodb+srv://leocelestine:Bethelboyy@ktcluster.9gvhl6k.mongodb.net/?retryWrites=true&w=majority')
-db = client.ktapp_db
-
-users_collection = db.users
-attendance_collection = db.attendance
-otps_collection = db.otps
+def init_db():
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee TEXT,
+            date TEXT,
+            time TEXT,
+            type TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS otps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            otp TEXT,
+            created_at TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
 def send_email(to, subject, body):
-    sender = 'leocelestine.s@gmail.com'
-    password = 'wyxq kvwx qzsh mqee'  # Replace with the app password
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = sender
-    msg['To'] = to
-
     try:
+        sender = 'leocelestine.s@gmail.com'
+        password = 'wyxq kvwx qzsh mqee'  # Replace with the app password
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = sender
+        msg['To'] = to
+
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(sender, password)
             server.sendmail(sender, [to], msg.as_string())
-            print(f"Email sent to {to}")
+            logging.info(f"Email sent to {to}")
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        logging.error(f"Failed to send email: {e}")
 
 @app.route('/')
 def serve_index():
@@ -46,93 +70,138 @@ def serve_staff():
 
 @app.route('/request-reset', methods=['POST'])
 def request_reset():
-    data = request.get_json()
-    username = data['username']
-    email = 'leocelestine.s@gmail.com'
+    try:
+        data = request.get_json()
+        username = data['username']
+        email = 'leocelestine.s@gmail.com'  # Email to send OTP to
 
-    otp = str(randint(100000, 999999))
-    created_at = datetime.now().isoformat()
+        otp = str(randint(100000, 999999))
+        created_at = datetime.now().isoformat()
 
-    otps_collection.delete_many({'username': username})
-    otps_collection.insert_one({'username': username, 'otp': otp, 'created_at': created_at})
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM otps WHERE username = ?', (username,))
+        cursor.execute('''
+            INSERT INTO otps (username, otp, created_at)
+            VALUES (?, ?, ?)
+        ''', (username, otp, created_at))
+        conn.commit()
+        conn.close()
 
-    send_email(email, 'Your OTP Code', f'Your OTP code is {otp}')
+        send_email(email, 'Your OTP Code', f'Your OTP code is {otp}')
 
-    return jsonify({'message': 'OTP sent'})
+        return jsonify({'message': 'OTP sent'})
+    except Exception as e:
+        logging.error(f"Error in request_reset: {e}")
+        return jsonify({'message': 'An error occurred'}), 500
 
 @app.route('/reset-password', methods=['POST'])
 def reset_password():
-    data = request.get_json()
-    username = data['username']
-    otp = data['otp']
-    new_password = data['new_password']
+    try:
+        data = request.get_json()
+        username = data['username']
+        otp = data['otp']
+        new_password = data['new_password']
 
-    record = otps_collection.find_one({'username': username, 'otp': otp})
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT otp FROM otps WHERE username = ? AND otp = ?', (username, otp))
+        record = cursor.fetchone()
 
-    if not record:
-        return jsonify({'message': 'Invalid OTP'}), 401
+        if not record:
+            conn.close()
+            return jsonify({'message': 'Invalid OTP'}), 401
 
-    hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-    users_collection.update_one({'username': username}, {'$set': {'password': hashed_password}})
-    otps_collection.delete_many({'username': username})
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('UPDATE users SET password = ? WHERE username = ?', (hashed_password, username))
+        cursor.execute('DELETE FROM otps WHERE username = ?', (username,))
+        conn.commit()
+        conn.close()
 
-    return jsonify({'message': 'Password reset successfully'})
+        return jsonify({'message': 'Password reset successfully'})
+    except Exception as e:
+        logging.error(f"Error in reset_password: {e}")
+        return jsonify({'message': 'An error occurred'}), 500
 
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    username = data['username']
-    password = data['password']
+    try:
+        data = request.get_json()
+        username = data['username']
+        password = data['password']
 
-    user = users_collection.find_one({'username': username})
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT password FROM users WHERE username = ?', (username,))
+        record = cursor.fetchone()
+        conn.close()
 
-    if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-        return jsonify({'message': 'Login successful'})
-    else:
-        return jsonify({'message': 'Invalid credentials'}), 401
+        if record and bcrypt.checkpw(password.encode('utf-8'), record[0]):
+            return jsonify({'message': 'Login successful'})
+        else:
+            return jsonify({'message': 'Invalid credentials'}), 401
+    except Exception as e:
+        logging.error(f"Error in login: {e}")
+        return jsonify({'message': 'An error occurred'}), 500
 
 @app.route('/mark-attendance', methods=['POST'])
 def mark_attendance():
-    data = request.get_json()
-    employee = data['employee']
-    date = data['date']
-    time = data['time']
-    type = data['type']
+    try:
+        data = request.get_json()
+        employee = data['employee']
+        date = data['date']
+        time = data['time']
+        type = data['type']
 
-    attendance_collection.insert_one({
-        'employee': employee,
-        'date': date,
-        'time': time,
-        'type': type
-    })
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO attendance (employee, date, time, type)
+            VALUES (?, ?, ?, ?)
+        ''', (employee, date, time, type))
 
-    return jsonify({'message': f'Time {type} marked successfully'})
+        conn.commit()
+        conn.close()
+
+        return jsonify({'message': f'Time {type} marked successfully'})
+    except Exception as e:
+        logging.error(f"Error in mark_attendance: {e}")
+        return jsonify({'message': 'An error occurred'}), 500
 
 @app.route('/get-attendance', methods=['GET'])
 def get_attendance():
-    records = attendance_collection.find()
-    attendance_data = {}
+    try:
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM attendance ORDER BY employee, date')
+        records = cursor.fetchall()
+        conn.close()
 
-    for record in records:
-        employee = record['employee']
-        date = record['date']
-        time = record['time']
-        type = record['type']
+        attendance_data = {}
+        for record in records:
+            employee = record[1]
+            date = record[2]
+            time = record[3]
+            type = record[4]
 
-        if employee not in attendance_data:
-            attendance_data[employee] = {}
+            if employee not in attendance_data:
+                attendance_data[employee] = {}
 
-        year, month, day = date.split('-')
-        if year not in attendance_data[employee]:
-            attendance_data[employee][year] = {}
-        if month not in attendance_data[employee][year]:
-            attendance_data[employee][year][month] = {}
-        if day not in attendance_data[employee][year][month]:
-            attendance_data[employee][year][month][day] = []
+            year, month, day = date.split('-')
+            if year not in attendance_data[employee]:
+                attendance_data[employee][year] = {}
+            if month not in attendance_data[employee][year]:
+                attendance_data[employee][year][month] = {}
+            if day not in attendance_data[employee][year][month]:
+                attendance_data[employee][year][month][day] = []
 
-        attendance_data[employee][year][month][day].append({'time': time, 'type': type})
+            attendance_data[employee][year][month][day].append({'time': time, 'type': type})
 
-    return jsonify(attendance_data)
+        return jsonify(attendance_data)
+    except Exception as e:
+        logging.error(f"Error in get_attendance: {e}")
+        return jsonify({'message': 'An error occurred'}), 500
 
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True, port=5001)
